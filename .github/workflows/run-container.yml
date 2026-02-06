@@ -1,0 +1,51 @@
+name: Run Docker Container
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: "Application / ECR repo name"
+        required: true
+      image_tag:
+        description: "Image tag"
+        required: true
+        default: "latest"
+      container_name:
+        description: "Docker container name"
+        required: true
+      host_port:
+        description: "Host port"
+        required: true
+        default: "80"
+      container_port:
+        description: "Container port"
+        required: true
+        default: "80"
+
+jobs:
+  run-container:
+    runs-on: ubuntu-latest
+
+    env:
+      ECR_REPO: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ inputs.app_name }}
+
+    steps:
+      - name: Run container on EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
+            | docker login --username AWS --password-stdin $ECR_REPO
+
+            docker pull $ECR_REPO:${{ inputs.image_tag }}
+
+            docker stop ${{ inputs.container_name }} || true
+            docker rm ${{ inputs.container_name }} || true
+
+            docker run -d \
+              --name ${{ inputs.container_name }} \
+              -p ${{ inputs.host_port }}:${{ inputs.container_port }} \
+              $ECR_REPO:${{ inputs.image_tag }}

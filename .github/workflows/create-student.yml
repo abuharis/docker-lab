@@ -1,0 +1,32 @@
+name: Create Student Linux Profile
+
+on:
+  workflow_dispatch:
+    inputs:
+      student_name:
+        description: "Student username"
+        required: true
+
+jobs:
+  create-user:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create student user
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            sudo mkdir -p /etc/skel/.docker
+            sudo cp -r /home/${{ secrets.EC2_USER }}/.docker/* /etc/skel/.docker/ || true
+
+            sudo useradd -m ${{ inputs.student_name }}
+            sudo usermod -aG docker ${{ inputs.student_name }}
+
+            sudo chown -R \
+              ${{ inputs.student_name }}:${{ inputs.student_name }} \
+              /home/${{ inputs.student_name }}
+
+            echo "Student ${{ inputs.student_name }} created successfully"

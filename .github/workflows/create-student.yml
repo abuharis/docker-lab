@@ -1,32 +1,38 @@
-name: Create Student Linux Profile
+name: Create Bootcamp Users
 
 on:
   workflow_dispatch:
     inputs:
-      student_name:
-        description: "Student username"
+      usernames:
+        description: "Comma-separated Linux usernames (e.g. student1,student2)"
         required: true
 
 jobs:
-  create-user:
+  create-users:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Create student user
+      - name: Create users on EC2
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
+          username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            sudo mkdir -p /etc/skel/.docker
-            sudo cp -r /home/${{ secrets.EC2_USER }}/.docker/* /etc/skel/.docker/ || true
+            set -e
 
-            sudo useradd -m ${{ inputs.student_name }}
-            sudo usermod -aG docker ${{ inputs.student_name }}
+            USER_LIST="${{ github.event.inputs.usernames }}"
 
-            sudo chown -R \
-              ${{ inputs.student_name }}:${{ inputs.student_name }} \
-              /home/${{ inputs.student_name }}
+            IFS=',' read -ra USERS <<< "$USER_LIST"
 
-            echo "Student ${{ inputs.student_name }} created successfully"
+            for USER in "${USERS[@]}"; do
+              USER=$(echo "$USER" | xargs)   # trim spaces
+
+              if id "$USER" &>/dev/null; then
+                echo "User $USER already exists — skipping"
+              else
+                echo "Creating user: $USER"
+                sudo useradd -m -s /bin/bash "$USER"
+                sudo chown -R "$USER:$USER" "/home/$USER"
+              fi
+            done

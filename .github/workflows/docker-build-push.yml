@@ -1,37 +1,38 @@
-name: Generic Docker Image Build & Push
+name: Build & Push Docker Image to ECR
 
 on:
   workflow_dispatch:
     inputs:
       git_repo_url:
-        description: "Public GitHub repo URL of the application"
+        description: "Public GitHub repository URL of the application"
         required: true
       git_branch:
         description: "Git branch to build"
         required: true
         default: "main"
       app_name:
-        description: "Application name (ECR repo name)"
+        description: "Application name (ECR repo: docker-images/<app_name>)"
         required: true
       image_tag:
         description: "Docker image tag"
         required: true
         default: "latest"
       dockerfile_path:
-        description: "Path to Dockerfile"
+        description: "Path to Dockerfile inside the repo"
         required: true
         default: "Dockerfile"
       build_context:
-        description: "Docker build context"
+        description: "Docker build context inside the repo"
         required: true
         default: "."
 
 jobs:
-  build-push:
+  build-and-push:
     runs-on: ubuntu-latest
 
     env:
-      ECR_REPO: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ inputs.app_name }}
+      ECR_REPO_NAME: docker-images/${{ inputs.app_name }}
+      ECR_REPO_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/docker-images/${{ inputs.app_name }}
 
     steps:
       - name: Clone application repository
@@ -46,17 +47,17 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Create ECR repo if missing
+      - name: Create ECR repository if it does not exist
         run: |
           aws ecr describe-repositories \
-            --repository-names ${{ inputs.app_name }} \
+            --repository-names $ECR_REPO_NAME \
           || aws ecr create-repository \
-            --repository-name ${{ inputs.app_name }}
+            --repository-name $ECR_REPO_NAME
 
-      - name: Login to ECR
+      - name: Login to Amazon ECR
         run: |
           aws ecr get-login-password \
-          | docker login --username AWS --password-stdin $ECR_REPO
+          | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
 
       - name: Build Docker image
         run: |
@@ -65,12 +66,12 @@ jobs:
             -t ${{ inputs.app_name }}:${{ inputs.image_tag }} \
             app/${{ inputs.build_context }}
 
-      - name: Tag image for ECR
+      - name: Tag Docker image
         run: |
           docker tag \
             ${{ inputs.app_name }}:${{ inputs.image_tag }} \
-            $ECR_REPO:${{ inputs.image_tag }}
+            $ECR_REPO_URI:${{ inputs.image_tag }}
 
       - name: Push image to ECR
         run: |
-          docker push $ECR_REPO:${{ inputs.image_tag }}
+          docker push $ECR_REPO_URI:${{ inputs.image_tag }}

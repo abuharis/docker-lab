@@ -1,15 +1,30 @@
-name: Build & Push Docker Image
+name: Generic Docker Image Build & Push
 
 on:
   workflow_dispatch:
     inputs:
+      git_repo_url:
+        description: "Public GitHub repo URL of the application"
+        required: true
+      git_branch:
+        description: "Git branch to build"
+        required: true
+        default: "main"
       app_name:
-        description: "Application name (ECR repo & image name)"
+        description: "Application name (ECR repo name)"
         required: true
       image_tag:
         description: "Docker image tag"
         required: true
         default: "latest"
+      dockerfile_path:
+        description: "Path to Dockerfile"
+        required: true
+        default: "Dockerfile"
+      build_context:
+        description: "Docker build context"
+        required: true
+        default: "."
 
 jobs:
   build-push:
@@ -19,8 +34,10 @@ jobs:
       ECR_REPO: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ inputs.app_name }}
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - name: Clone application repository
+        run: |
+          git clone --branch ${{ inputs.git_branch }} \
+            ${{ inputs.git_repo_url }} app
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -29,7 +46,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Create ECR repo if not exists
+      - name: Create ECR repo if missing
         run: |
           aws ecr describe-repositories \
             --repository-names ${{ inputs.app_name }} \
@@ -41,16 +58,19 @@ jobs:
           aws ecr get-login-password \
           | docker login --username AWS --password-stdin $ECR_REPO
 
-      - name: Build image
+      - name: Build Docker image
         run: |
-          docker build -t ${{ inputs.app_name }}:${{ inputs.image_tag }} .
+          docker build \
+            -f app/${{ inputs.dockerfile_path }} \
+            -t ${{ inputs.app_name }}:${{ inputs.image_tag }} \
+            app/${{ inputs.build_context }}
 
-      - name: Tag image
+      - name: Tag image for ECR
         run: |
           docker tag \
             ${{ inputs.app_name }}:${{ inputs.image_tag }} \
             $ECR_REPO:${{ inputs.image_tag }}
 
-      - name: Push image
+      - name: Push image to ECR
         run: |
           docker push $ECR_REPO:${{ inputs.image_tag }}
